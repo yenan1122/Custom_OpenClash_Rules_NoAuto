@@ -1,9 +1,9 @@
 name: Build No-Auto Template
 
 on:
-  workflow_dispatch:       # 允许手动运行
+  workflow_dispatch:       # 手动运行
   schedule:
-    - cron: '0 3 * * *'    # 每天 11:00 北京时间自动同步
+    - cron: '0 3 * * *'    # 每天 11:00（北京）自动同步
 
 permissions:
   contents: write
@@ -22,18 +22,35 @@ jobs:
             'https://raw.githubusercontent.com/Aethersailor/Custom_OpenClash_Rules/main/cfg/Custom_Clash.ini' \
             -o cfg/Custom_Clash_upstream.ini
 
-      - name: Remove AutoSelect and reorder
+      - name: Patch (remove AutoSelect & put Manual first)
         run: |
-          # 删除“♻️ 自动选择”分组整行
-          sed -i '/^custom_proxy_group=♻️ 自动选择`url-test`/d' cfg/Custom_Clash_upstream.ini
-          # 删除其他分组里的 []♻️ 自动选择
-          sed -i 's/`[]♻️ 自动选择//g' cfg/Custom_Clash_upstream.ini
-          # 在每个 select 分组里，把 [] 手动选择 放到第一位
-          sed -i '/^custom_proxy_group=.*`select`/ s/`select`/&[] 手动选择`/' cfg/Custom_Clash_upstream.ini
-          # 去掉重复的 [] 手动选择
-          sed -i 's/`[] 手动选择//2g' cfg/Custom_Clash_upstream.ini
-          # 保存最终文件
-          cp cfg/Custom_Clash_upstream.ini cfg/Custom_Clash_no_auto.ini
+          python3 - << 'PY'
+          import re, io, sys, pathlib
+          p = pathlib.Path("cfg/Custom_Clash_upstream.ini")
+          text = p.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+
+          out = []
+          for line in text:
+              # 1) 删除“♻️ 自动选择”分组本体这一整行
+              if line.startswith("custom_proxy_group=♻️ 自动选择`url-test`"):
+                  continue
+
+              # 2) 删除所有对 []♻️ 自动选择 的引用（连同前面的反引号）
+              line = line.replace("`[]♻️ 自动选择", "")
+
+              # 3) 对所有 select 分组：把“[] 手动选择”放到第一位，并避免重复
+              if line.startswith("custom_proxy_group=") and "`select`" in line:
+                  # 去掉本行所有“[] 手动选择”（不管前面是否带反引号/空格）
+                  line = re.sub(r"`?\[\]\s*手动选择", "", line)
+                  # 只在第一次出现的 `select` 后面插入一次
+                  line = line.replace("`select`", "`select`[] 手动选择`", 1)
+
+              out.append(line)
+
+          out_text = "".join(out)
+          pathlib.Path("cfg/Custom_Clash_no_auto.ini").write_text(out_text, encoding="utf-8")
+          print("Patched and wrote cfg/Custom_Clash_no_auto.ini")
+          PY
 
       - name: Commit & push
         run: |
@@ -41,6 +58,8 @@ jobs:
           git config user.email "actions@github.com"
           if ! git diff --quiet; then
             git add cfg/Custom_Clash_no_auto.ini
-            git commit -m "auto sync no-auto template"
+            git commit -m "auto: strip AutoSelect & put Manual first"
             git push
+          else
+            echo "No changes."
           fi
