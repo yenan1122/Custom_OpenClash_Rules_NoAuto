@@ -33,10 +33,12 @@ jobs:
           perl -0777 -pe 's/`\\[\\]♻️ 自动选择//g' -i cfg/Custom_Clash_upstream.ini
 
       # ③ 把“[] 手动选择”放到所有 select 分组的第一个，然后去重
-      - name: Put Manual first in all select groups
-        run: |
-          perl -0777 -pe 's/(^custom_proxy_group=.*?`select`)/$1[] 手动选择`/mg' -i cfg/Custom_Clash_upstream.ini
-          perl -0777 -pe 's/^(custom_proxy_group=.*?`select`\\[\\] 手动选择)(.*)$/ $1 . ($2=~s/`\\[\\] 手动选择//gr) /meg' -i cfg/Custom_Clash_upstream.ini
+       - name: Put Manual first in all select groups
+         run: |
+      # 在每条 select 分组后插入一次 [] 手动选择`
+          perl -0777 -pe 's/(^custom_proxy_group=.*?`select`)/\1[] 手动选择`/mg' -i cfg/Custom_Clash_upstream.ini
+      # 同一行如果本来就有“[] 手动选择”，把重复的删掉（保留第一个）
+          perl -0777 -pe 's/^(custom_proxy_group=.*?`select`\[\] 手动选择)(.*)$/ $1 . ($2=~s/`\[\] 手动选择//gr) /meg' -i cfg/Custom_Clash_upstream.ini
 
       # ④ 输出最终文件名
       - name: Write final file
