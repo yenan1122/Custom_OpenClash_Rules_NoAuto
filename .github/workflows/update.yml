@@ -1,0 +1,46 @@
+name: Build No-Auto Template
+
+on:
+  workflow_dispatch:       # 允许手动运行
+  schedule:
+    - cron: '0 3 * * *'    # 每天 11:00 北京时间自动同步
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Fetch upstream template
+        run: |
+          mkdir -p cfg
+          curl -fsSL \
+            'https://raw.githubusercontent.com/Aethersailor/Custom_OpenClash_Rules/main/cfg/Custom_Clash.ini' \
+            -o cfg/Custom_Clash_upstream.ini
+
+      - name: Remove AutoSelect and reorder
+        run: |
+          # 删除“♻️ 自动选择”分组整行
+          sed -i '/^custom_proxy_group=♻️ 自动选择`url-test`/d' cfg/Custom_Clash_upstream.ini
+          # 删除其他分组里的 []♻️ 自动选择
+          sed -i 's/`[]♻️ 自动选择//g' cfg/Custom_Clash_upstream.ini
+          # 在每个 select 分组里，把 [] 手动选择 放到第一位
+          sed -i '/^custom_proxy_group=.*`select`/ s/`select`/&[] 手动选择`/' cfg/Custom_Clash_upstream.ini
+          # 去掉重复的 [] 手动选择
+          sed -i 's/`[] 手动选择//2g' cfg/Custom_Clash_upstream.ini
+          # 保存最终文件
+          cp cfg/Custom_Clash_upstream.ini cfg/Custom_Clash_no_auto.ini
+
+      - name: Commit & push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          if ! git diff --quiet; then
+            git add cfg/Custom_Clash_no_auto.ini
+            git commit -m "auto sync no-auto template"
+            git push
+          fi
