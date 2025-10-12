@@ -1,12 +1,12 @@
 name: Build No-Auto Template
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:        # 手动运行
   schedule:
-    - cron: '0 3 * * *'   # 每天 UTC 03:00（北京约 11:00）
+    - cron: '0 3 * * *'     # 每天 UTC 03:00（北京约 11:00）
 
 permissions:
-  contents: write
+  contents: write           # 允许推送文件
 
 jobs:
   build:
@@ -22,31 +22,38 @@ jobs:
             'https://raw.githubusercontent.com/Aethersailor/Custom_OpenClash_Rules/main/cfg/Custom_Clash.ini' \
             -o cfg/Custom_Clash_upstream.ini
 
-      - name: Patch (remove AutoSelect & put Manual first)
+      - name: Patch (safe remove AutoSelect & put Manual first)
         run: |
           python3 - << 'PY'
           import re, pathlib
-          p = pathlib.Path("cfg/Custom_Clash_upstream.ini")
-          text = p.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+          inp = pathlib.Path("cfg/Custom_Clash_upstream.ini")
+          lines = inp.read_text(encoding="utf-8", errors="ignore").splitlines(True)
 
           out = []
-          for line in text:
-              # 1) 删除“♻️ 自动选择”分组本体
-              if line.startswith("custom_proxy_group=♻️ 自动选择`url-test`"):
+          for ln in lines:
+              s = ln.strip()
+
+              # 1) 删除“♻️ 自动选择”分组本体（仅此一行，防误删）
+              if s.startswith("custom_proxy_group=♻️ 自动选择`url-test`"):
                   continue
-              # 2) 删除所有对 []♻️ 自动选择 的引用（含前面的反引号）
-              line = line.replace("`[]♻️ 自动选择", "")
-              # 3) 所有 select 分组，把“[] 手动选择”放第一，并去重
-              if line.startswith("custom_proxy_group=") and "`select`" in line:
-                  line = re.sub(r"`?\[\]\s*手动选择", "", line)      # 去重
-                  line = line.replace("`select`", "`select`[] 手动选择`", 1)
-              out.append(line)
+
+              # 2) 移除其它分组里对“♻️ 自动选择”的候选项（含可选反引号）
+              ln = re.sub(r'`?\[\]♻️\s*自动选择`?', '', ln)
+
+              # 3) 所有 select 分组：让“[] 手动选择”排第一，并去重
+              if ln.startswith("custom_proxy_group=") and "`select`" in ln:
+                  # 去除已有的“手动选择”（避免重复）
+                  ln = re.sub(r'`?\[\]\s*手动选择`?', '', ln)
+                  # 仅在第一次出现的 `select` 后插入
+                  ln = ln.replace("`select`", "`select`[] 手动选择`", 1)
+
+              out.append(ln)
 
           pathlib.Path("cfg/Custom_Clash_no_auto.ini").write_text("".join(out), encoding="utf-8")
-          print("Wrote cfg/Custom_Clash_no_auto.ini")
+          print("OK -> cfg/Custom_Clash_no_auto.ini")
           PY
 
-      - name: Commit & push (force to main)
+      - name: Commit & force push
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
