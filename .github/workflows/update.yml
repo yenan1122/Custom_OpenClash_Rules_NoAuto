@@ -1,0 +1,55 @@
+name: Build No-Auto Template
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'   # 每天 UTC 03:00（北京约 11:00）
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Fetch upstream template
+        run: |
+          mkdir -p cfg
+          curl -fsSL \
+            'https://raw.githubusercontent.com/Aethersailor/Custom_OpenClash_Rules/main/cfg/Custom_Clash.ini' \
+            -o cfg/Custom_Clash_upstream.ini
+
+      - name: Patch (remove AutoSelect & put Manual first)
+        run: |
+          python3 - << 'PY'
+          import re, pathlib
+          p = pathlib.Path("cfg/Custom_Clash_upstream.ini")
+          text = p.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+
+          out = []
+          for line in text:
+              # 1) 删除“♻️ 自动选择”分组本体
+              if line.startswith("custom_proxy_group=♻️ 自动选择`url-test`"):
+                  continue
+              # 2) 删除所有对 []♻️ 自动选择 的引用（含前面的反引号）
+              line = line.replace("`[]♻️ 自动选择", "")
+              # 3) 所有 select 分组，把“[] 手动选择”放第一，并去重
+              if line.startswith("custom_proxy_group=") and "`select`" in line:
+                  line = re.sub(r"`?\[\]\s*手动选择", "", line)      # 去重
+                  line = line.replace("`select`", "`select`[] 手动选择`", 1)
+              out.append(line)
+
+          pathlib.Path("cfg/Custom_Clash_no_auto.ini").write_text("".join(out), encoding="utf-8")
+          print("Wrote cfg/Custom_Clash_no_auto.ini")
+          PY
+
+      - name: Commit & push (force to main)
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -m "auto: strip AutoSelect & put Manual first" || echo "nothing to commit"
+          git push origin HEAD:main --force
